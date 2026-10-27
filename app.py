@@ -1,59 +1,81 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import requests
+import sqlite3
 
 app = Flask(__name__)
-CORS(app) # للسماح للتطبيق بالاتصال بالوسيط
+CORS(app)
 
-# بيانات الإدمن الخاصة بك (تبقى مخفية هنا في السيرفر ولا تصل للمشترك)
-ADMIN_USER = "admin@dsc"
+DB_FILE = 'users.db'
+
+# إنشاء قاعدة البيانات وتجهيزها
+def init_db():
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS users
+                 (username TEXT PRIMARY KEY, password TEXT, phone TEXT, 
+                  start_date TEXT, exp_date TEXT, debt TEXT, status TEXT)''')
+    conn.commit()
+    conn.close()
+
+init_db()
+
+# حسابك الإداري للدخول للوحة التحكم
+ADMIN_USER = "bashar@dsc"
 ADMIN_PASS = "bashar2000"
-# رابط الـ API الفعلي للساس (يجب استخراجه من لوحة التحكم)
-SAS_API_URL = "https://itpc2.scn-wifi.com/api" 
 
 @app.route('/login-subscriber', methods=['POST'])
-def login_subscriber():
+def login():
     data = request.json
-    sub_user = data.get('username')
-    sub_pass = data.get('password')
+    user = data.get('username')
+    pw = data.get('password')
 
-    if not sub_user or not sub_pass:
+    if not user or not pw:
         return jsonify({"error": "الرجاء إدخال اليوزر والباسورد"}), 400
 
-    try:
-        # 1. السيرفر يقوم بتسجيل الدخول للساس كإدمن للحصول على Token/Session
-        admin_login = requests.post(f"{SAS_API_URL}/login", json={
-            "username": ADMIN_USER,
-            "password": ADMIN_PASS
-        })
-        
-        # ملاحظة: هذا مجرد هيكل تقريبي، الكود الدقيق يعتمد على شكل الـ API الخاص بنظام SCN-WIFI
-        if admin_login.status_code == 200:
-            token = admin_login.json().get('token')
-            
-            # 2. السيرفر يبحث عن المشترك باستخدام اليوزر الخاص به
-            headers = {"Authorization": f"Bearer {token}"}
-            sub_info = requests.get(f"{SAS_API_URL}/users/{sub_user}", headers=headers)
-            
-            if sub_info.status_code == 200:
-                user_data = sub_info.json()
-                # 3. التحقق من تطابق باسورد المشترك
-                if user_data.get('password') == sub_pass:
-                    return jsonify({
-                        "status": "success",
-                        "expiration": user_data.get('expiration_date', 'غير متوفر'),
-                        "debt": user_data.get('debt', '0'),
-                        "status_active": user_data.get('is_online', False)
-                    })
-                else:
-                    return jsonify({"error": "كلمة المرور غير صحيحة"}), 401
-            else:
-                return jsonify({"error": "هذا المشترك غير موجود"}), 404
-        else:
-            return jsonify({"error": "خطأ في اتصال السيرفر بالساس"}), 500
+    # إذا كان الدخول للإدمن
+    if user == ADMIN_USER and pw == ADMIN_PASS:
+        return jsonify({"role": "admin", "status": "success"})
 
+    # إذا كان الدخول لمشترك عادي
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT exp_date, debt, status, phone, start_date FROM users WHERE username=? AND password=?", (user, pw))
+    row = c.fetchone()
+    conn.close()
+
+    if row:
+        return jsonify({
+            "role": "user",
+            "status": "success",
+            "expiration": row[0],
+            "debt": row[1],
+            "status_active": row[2] == 'متصل',
+            "phone": row[3],
+            "start_date": row[4]
+        })
+    else:
+        return jsonify({"error": "اليوزر أو الباسورد غير صحيح"}), 401
+
+@app.route('/add_user', methods=['POST'])
+def add_user():
+    data = request.json
+    admin_user = data.get('admin_user')
+    admin_pass = data.get('admin_pass')
+
+    # التحقق من صلاحيات الإدمن قبل الإضافة
+    if admin_user != ADMIN_USER or admin_pass != ADMIN_PASS:
+        return jsonify({"error": "غير مصرح لك بالإضافة"}), 403
+
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        c.execute("REPLACE INTO users (username, password, phone, start_date, exp_date, debt, status) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                  (data['username'], data['password'], data['phone'], data['start_date'], data['exp_date'], data['debt'], data['status']))
+        conn.commit()
+        conn.close()
+        return jsonify({"status": "success", "message": "تم إضافة / تعديل المشترك بنجاح!"})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "حدث خطأ أثناء الحفظ"}), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    app.run(host='0.0.0.0', port=10000)
