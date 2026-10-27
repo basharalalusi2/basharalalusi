@@ -7,7 +7,6 @@ CORS(app)
 
 DB_FILE = 'users.db'
 
-# إنشاء قاعدة البيانات وتجهيزها
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
@@ -19,7 +18,6 @@ def init_db():
 
 init_db()
 
-# حسابك الإداري للدخول للوحة التحكم
 ADMIN_USER = "bashar@dsc"
 ADMIN_PASS = "bashar2000"
 
@@ -32,11 +30,9 @@ def login():
     if not user or not pw:
         return jsonify({"error": "الرجاء إدخال اليوزر والباسورد"}), 400
 
-    # إذا كان الدخول للإدمن
     if user == ADMIN_USER and pw == ADMIN_PASS:
         return jsonify({"role": "admin", "status": "success"})
 
-    # إذا كان الدخول لمشترك عادي
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute("SELECT exp_date, debt, status, phone, start_date FROM users WHERE username=? AND password=?", (user, pw))
@@ -59,11 +55,7 @@ def login():
 @app.route('/add_user', methods=['POST'])
 def add_user():
     data = request.json
-    admin_user = data.get('admin_user')
-    admin_pass = data.get('admin_pass')
-
-    # التحقق من صلاحيات الإدمن قبل الإضافة
-    if admin_user != ADMIN_USER or admin_pass != ADMIN_PASS:
+    if data.get('admin_user') != ADMIN_USER or data.get('admin_pass') != ADMIN_PASS:
         return jsonify({"error": "غير مصرح لك بالإضافة"}), 403
 
     try:
@@ -73,9 +65,30 @@ def add_user():
                   (data['username'], data['password'], data['phone'], data['start_date'], data['exp_date'], data['debt'], data['status']))
         conn.commit()
         conn.close()
-        return jsonify({"status": "success", "message": "تم إضافة / تعديل المشترك بنجاح!"})
+        return jsonify({"status": "success", "message": "تم الحفظ بنجاح!"})
     except Exception as e:
         return jsonify({"error": "حدث خطأ أثناء الحفظ"}), 500
+
+# دالة جديدة لجلب جميع المشتركين لعرضهم في الجدول
+@app.route('/get_all_users', methods=['POST'])
+def get_all_users():
+    data = request.json
+    if data.get('admin_user') != ADMIN_USER or data.get('admin_pass') != ADMIN_PASS:
+        return jsonify({"error": "غير مصرح"}), 403
+
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT username, phone, start_date, exp_date, debt, status FROM users")
+    users = c.fetchall()
+    conn.close()
+
+    user_list = []
+    for u in users:
+        user_list.append({
+            "username": u[0], "phone": u[1], "start_date": u[2], 
+            "exp_date": u[3], "debt": u[4], "status": u[5]
+        })
+    return jsonify({"status": "success", "users": user_list})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=10000)
