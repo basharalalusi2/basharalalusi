@@ -56,7 +56,7 @@ def login():
 def add_user():
     data = request.json
     if data.get('admin_user') != ADMIN_USER or data.get('admin_pass') != ADMIN_PASS:
-        return jsonify({"error": "غير مصرح لك بالإضافة"}), 403
+        return jsonify({"error": "غير مصرح لك"}), 403
 
     try:
         conn = sqlite3.connect(DB_FILE)
@@ -65,11 +65,25 @@ def add_user():
                   (data['username'], data['password'], data['phone'], data['start_date'], data['exp_date'], data['debt'], data['status']))
         conn.commit()
         conn.close()
-        return jsonify({"status": "success", "message": "تم الحفظ بنجاح!"})
+        return jsonify({"status": "success", "message": "تم حفظ بيانات المشترك بنجاح!"})
     except Exception as e:
         return jsonify({"error": "حدث خطأ أثناء الحفظ"}), 500
 
-# دالة جديدة لجلب جميع المشتركين لعرضهم في الجدول
+@app.route('/delete_user', methods=['POST'])
+def delete_user():
+    data = request.json
+    if data.get('admin_user') != ADMIN_USER or data.get('admin_pass') != ADMIN_PASS:
+        return jsonify({"error": "غير مصرح"}), 403
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        c.execute("DELETE FROM users WHERE username=?", (data['username'],))
+        conn.commit()
+        conn.close()
+        return jsonify({"status": "success", "message": "تم الحذف بنجاح"})
+    except Exception as e:
+        return jsonify({"error": "حدث خطأ أثناء الحذف"}), 500
+
 @app.route('/get_all_users', methods=['POST'])
 def get_all_users():
     data = request.json
@@ -78,15 +92,16 @@ def get_all_users():
 
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute("SELECT username, phone, start_date, exp_date, debt, status FROM users")
+    # جلبنا الباسورد لكي يظهر عند الضغط على تعديل
+    c.execute("SELECT username, password, phone, start_date, exp_date, debt, status FROM users")
     users = c.fetchall()
     conn.close()
 
     user_list = []
     for u in users:
         user_list.append({
-            "username": u[0], "phone": u[1], "start_date": u[2], 
-            "exp_date": u[3], "debt": u[4], "status": u[5]
+            "username": u[0], "password": u[1], "phone": u[2], 
+            "start_date": u[3], "exp_date": u[4], "debt": u[5], "status": u[6]
         })
     return jsonify({"status": "success", "users": user_list})
 
